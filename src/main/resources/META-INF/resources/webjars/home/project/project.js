@@ -30,6 +30,11 @@ define(['cascade'], function ($cascade) {
 		 * Edited subscription model
 		 */
 		currentSubscription: null,
+		
+		/**
+		 * Tag toggle project
+		 */
+		togglefilterOption: 0,
 
 		initialize: function (parameters) {
 			current.$view.on('click', '.cancel-subscription', function () {
@@ -112,11 +117,9 @@ define(['cascade'], function ($cascade) {
 		loadProject: function (id, callback) {
 			// Restore QR Code position
 			$('.qrcode-toggle').find('.fa-qrcode').removeClass('hidden').end().find('.qrcode').addClass('hidden');
-
 			$('.subscribe-configuration').addClass('hidden');
 			_('main').addClass('hidden');
 			_('details').addClass('hidden');
-
 			$cascade.appendSpin(current.$view, 'fa-4x', 'far fa-circle faa-burst animated centered');
 			if (id === current.currentId) {
 				// Project is already loaded, cache useless Ajax call, display the details
@@ -147,7 +150,7 @@ define(['cascade'], function ($cascade) {
 				return;
 			}
 			current.search = true;
-
+			
 			// Project edition pop-up
 			_('popup').on('shown.bs.modal', function () {
 				_('name').focus();
@@ -241,6 +244,23 @@ define(['cascade'], function ($cascade) {
 				ajax: REST_PATH + 'project',
 				createdRow: function (nRow) {
 					$(nRow).find('.delete').on('click', current.deleteProject);
+					$(nRow).find('.disable').on('click', current.toggleProject);
+					$(nRow).find('.enable').on('click', current.toggleProject);
+				},
+				
+				fnServerParams: function (aoData) {
+					aoData.toggle = current.togglefilterOption;
+				},
+				initComplete: function(settings, json) {
+					var toggleFilter = '<div id="entityTable_toggle_filter" class="dataTables_filter form-group label-floating is-empty table-tools">'
+						+'<label>Projet :</label><select id="select_toggle" name="toggle"><option value="0"></option><option value="1">'+current.$messages['enable']+'</option><option value="2">Désactivé</option></select>'
+						+'</div>';
+					_('entityTable_filter').parent().append(toggleFilter);
+					_('select_toggle').select2({ containerCssClass : "toggle_select2" });
+					_('select_toggle').on("select2-selecting", function(e) { 
+						current.togglefilterOption = parseInt(e.choice.id, 10);
+						current.table && current.table.api().ajax.reload();		   
+					});
 				},
 				columns: [{
 					data: 'name',
@@ -248,7 +268,7 @@ define(['cascade'], function ($cascade) {
 					className: 'truncate',
 					render: function (_i, mode, data) {
 						if (mode === 'display') {
-							return '<a href="' + current.$url + '/' + data.id + '">' + data.name + '</a>';
+							return data.disable ? '<a class="locked" href="' + current.$url + '/' + data.id + '">' + data.name + '</a>' : '<a href="' + current.$url + '/' + data.id + '">' + data.name + '</a>';
 						}
 						return data.name;
 					}
@@ -275,11 +295,13 @@ define(['cascade'], function ($cascade) {
 					width: '16px'
 				}, {
 					data: null,
-					width: '48px',
+					width: '60px',
 					orderable: false,
-					render: function () {
+					render: function (data) {
+						var disablelink = data.disable ? '<a class="enable"><i class="fas fa-toggle-off" data-toggle="tooltip" title="' + current.$messages.enable + '"></i></a>' : '<a class="disable"><i class="fas fa-toggle-on" data-toggle="tooltip" title="' + current.$messages.disable + '"></i></a>';
 						var editlink = '<a class="update" data-toggle="modal" data-target="#popup"><i class="fas fa-pencil-alt" data-toggle="tooltip" title="' + current.$messages.update + '"></i></a>';
-						return editlink + '<a class="delete"><i class="fas fa-timesfas fa-times" data-toggle="tooltip" title="' + current.$messages['delete'] + '"></i></a>';
+						var deletelink = '<a class="delete"><i class="fas fa-timesfas fa-times" data-toggle="tooltip" title="' + current.$messages['delete'] + '"></i></a>';
+						return editlink + deletelink + disablelink;
 					}
 				}],
 				buttons: securityManager.isAllowedBusiness('project', 'post,put') ? [{
@@ -295,7 +317,8 @@ define(['cascade'], function ($cascade) {
 				name: _('name').val(),
 				pkey: _('pkey').val(),
 				teamLeader: _('teamLeader').val(),
-				description: _('description').val()
+				description: _('description').val(),
+				disable: true
 			};
 		},
 
@@ -347,6 +370,45 @@ define(['cascade'], function ($cascade) {
 				var entity = current.table.fnGetData($(this).closest('tr')[0]);
 				bootbox.confirmDelete(function (confirmed) {
 					confirmed && current.deleteProject(entity.id, entity.name);
+				}, entity.name);
+			}
+		},
+		
+		/**
+		 * Disable the selected project after popup confirmation, or directly from its identifier.
+		 */
+		toggleProject: function (id, name, data) {
+			if ((typeof id) === 'number') {
+				// Delete without confirmation
+				$.ajax({
+					type: 'PUT',
+					url: REST_PATH + 'project',
+					dataType: 'json',
+					contentType: 'application/json',
+					data: JSON.stringify(data),
+					success: function (id) {
+						var message = data.disable ? 'disable' : 'enable';
+						notifyManager.notify(Handlebars.compile(current.$messages[message])(data.name + ' (' + (data.id || id) + ')'));
+						_('popup').modal('hide');
+						current.table && current.table.api().ajax.reload();
+					}
+				});
+			} else {
+				// Requires a confirmation
+				var uc = current.table.fnGetData($(this).closest('tr')[0]);
+				var data = {
+						id: uc.id,
+						name: uc.name,
+						pkey: uc.pkey,
+						teamLeader: uc.teamLeader.name,
+						description: uc.description,
+						disable: uc.disable ? false : true
+				};
+				var entity = current.table.fnGetData($(this).closest('tr')[0]);
+				data.disable ? bootbox.confirmDisable(function (confirmed) {
+					confirmed && current.toggleProject(entity.id, entity.name, data);
+				}, entity.name) : bootbox.confirmEnable(function (confirmed) {
+					confirmed && current.toggleProject(entity.id, entity.name, data);
 				}, entity.name);
 			}
 		},

@@ -93,3 +93,15 @@ div.dt-button-background {
 	position: relative;
 	top: -8px;
 }
+#select_toggle {
+	background: transparent;
+    color: #d0d0d0;
+}
+#entityTable_toggle_filter {
+	margin-top: 10px;
+	margin-right: 100px;
+}
+.toggle_select2 {
+	display: inline-block;
+	width: 100px;
+}
